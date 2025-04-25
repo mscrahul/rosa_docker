@@ -44,7 +44,7 @@ Several strategies were attempted within the `Dockerfile` to achieve a working b
         *   `ModuleNotFoundError: No module named 'rosa'`: This reappeared *after* we successfully got Catkin to build `global_path_planning`. It indicated that sourcing the complete `devel/setup.bash` (now containing info for `global_path_planning` and `turtle_agent`) was preventing Python from finding the `rosa` library installed elsewhere by `pip`. Attempts to fix this by adjusting `PYTHONPATH` in the `start` alias or `CMD` were unsuccessful in reliably resolving the import within the `roslaunch` environment. Treating `rosa` as a Catkin package also ultimately led back to the persistent `find_package` error for `global_path_planning`.
         *   
 WhatsApp Image 2025-04-26 at 12.47.09 AM.jpeg
-
+WhatsApp Image 2025-04-26 at 12.47.09 AM.jpeg
 
 ## Final State & Sticking Point (Docker Approach)
 
