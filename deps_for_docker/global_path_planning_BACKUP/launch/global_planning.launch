@@ -1,0 +1,7 @@
+<launch>
+    <node pkg="global_path_planning" type="global_path_planner" name="global_path_planner_node" output="screen">
+        <param name="img_threshold" value="200" type="int"/>
+        <param name="grid_size" value="5" type="int"/>
+        <param name="img_file" value="modified_ed_map_cropped_final_large_obs.png" type="string"/>
+    </node>
+</launch>

@@ -1,0 +1,180 @@
+#!/usr/bin/env python3
+
+import cv2
+import os,rospkg
+import rospy
+import yaml
+import numpy as np
+from global_path_planning import a_star_planner
+from global_path_planning.map_converter import OccupancyMapGrid
+from global_path_planning import road_path_planner
+from geometry_msgs.msg import PoseArray
+from geometry_msgs.msg import Pose
+from geometry_msgs.msg import PoseWithCovarianceStamped
+
+goal_point_map = [np.inf,np.inf]
+
+class GlobalPlanner:
+    
+    def __init__(self,map,path_nodes,adj_matrix,path_edges):
+        '''Class initiator'''
+        self.start_point = (0,0)       #Starting point in actual world
+        self.goal_point = (0,0)        #Goal point in actual world
+        self.start_node = -1           #Starting node(on road map) in actual world
+        self.goal_node = -1            #Goal node(on road map) in actual world
+        self.start_available = False
+        self.gmap = map
+        self.path = []
+        #Variables corresponding to predefined pathways
+        self.path_nodes = path_nodes
+        self.adj_matrix = adj_matrix
+        self.path_edges = path_edges
+
+    def get_start_pt_cb(self,msg):
+        '''Callback function for getting the position of the robot'''
+        x_robot = msg.pose.pose.position.x/1000
+        y_robot = msg.pose.pose.position.y/1000
+        self.start_point = (x_robot,y_robot)
+        self.start_available = True
+
+    def set_goal_pt(self,point):
+        '''Function to set the goal point'''
+        self.goal_point = point
+
+    def get_closest_node(self,point):
+        '''Find the closest predefined node to the given point'''
+        min_dist = np.inf
+        node = -1
+        for i in range(len(self.path_nodes)):
+            path_node = self.path_nodes[i]
+            dist = self.get_distance(point,path_node) #Find distance from the point to each of the nodes
+            if dist < min_dist:
+                min_dist = dist
+                node = i
+        return node
+            
+    def get_path(self):
+        '''Return the path which includes starting and ending point'''
+        while not self.start_available:    
+            if rospy.is_shutdown(): return
+        
+        #Get nearest nodes of starting and end point
+        self.start_node = self.get_closest_node(self.start_point)
+        self.goal_node = self.get_closest_node(self.goal_point)
+
+        if self.goal_node != self.start_node: 
+            '''
+            A star planner          -> start point to start node
+            Predefined path planner -> start node to end node
+            A star planner          -> end node to end point
+            ''' 
+            path1,_ = a_star_planner.a_star(self.start_point, self.path_nodes[self.start_node], self.gmap, movement='8N')
+            road_paths = road_path_planner.get_path(self.start_node,self.goal_node,self.path_nodes,self.adj_matrix,self.path_edges)
+            path2 = road_paths[0]
+            for i in range(1,len(road_paths)): path2 = np.concatenate((path2,road_paths[i]),axis=0)
+            path3,_ = a_star_planner.a_star(self.path_nodes[self.goal_node], self.goal_point, self.gmap, movement='8N')
+            self.path = np.concatenate((path1,path2,path3),axis=0)
+        else: 
+            self.path,_ = a_star_planner.a_star(self.start_point, self.goal_point, self.gmap, movement='8N')
+
+        return self.path
+        
+
+    def get_distance(self,pt1,pt2):
+        '''Get distance between two points'''
+        return np.sqrt((pt1[0]-pt2[0])**2+(pt1[1]-pt2[1])**2)
+
+def click_event(event, x, y, flags, params):
+    '''Checking for left mouse clicks to choose the goal point'''
+    global goal_point_map
+    if event == cv2.EVENT_LBUTTONDOWN:
+        goal_point_map = [x,y]
+
+    
+def load_params(base_str):
+    '''Function to load parameters'''
+    rp = rospkg.RosPack()
+    base_path = rp.get_path(base_str) #Get path of params
+
+    #Loading the predefined path parameters
+    stream = open(base_path+"/config/path_params.yaml", 'r')
+    path_stream = yaml.safe_load_all(stream)
+    path_params_list = []
+    for path_params in path_stream:    
+        path_params_list.append(path_params)
+
+    #Loading params from parameter server
+    map_file = rospy.get_param("/global_path_planner_node/img_file")
+    threshold = rospy.get_param("/global_path_planner_node/img_threshold")
+    grid_size = rospy.get_param("/global_path_planner_node/grid_size") 
+    path_img = os.path.join(base_path, "map", map_file)
+
+    return [path_params_list,[path_img,grid_size,threshold]]
+
+def turn_off():
+    print("Shutting down global_path_planner_node")
+    return
+
+def main():
+    rospy.init_node('global_path_planner_node') #Node initialization
+    rospy.on_shutdown(turn_off)
+
+    #Unpacking the loaded parameters
+    param_list = load_params('global_path_planning')
+    path_params_list = param_list[0]
+    path_nodes = path_params_list[0]['node_coordinates']
+    adj_matrix = path_params_list[1]['adj_matrix']
+    path_edges = path_params_list[2]['paths'][0] 
+
+    #Get occupancy grid map
+    (gmap,gray_map) = OccupancyMapGrid.get_occupancy_map(param_list[1][0],param_list[1][2], param_list[1][1])
+    #Get an insance of GlobalPlanner
+    global_planner = GlobalPlanner(gmap,path_nodes,adj_matrix,path_edges)
+
+    global_path_pub = rospy.Publisher("global_path",PoseArray,queue_size=1) #Publisher for global path
+    rospy.Subscriber("pose_ekf",PoseWithCovarianceStamped,global_planner.get_start_pt_cb) #Subscriber for getting the pose data
+
+    #To select the start and end point
+    cv2.imshow('Occupancy Map:Choose a goal point',gray_map)
+    cv2.setMouseCallback('Occupancy Map:Choose a goal point',click_event)
+    cv2.waitKey(0)  
+    #Wait until a goal point is selected  
+    while goal_point_map == [np.inf,np.inf] and not rospy.is_shutdown():   
+        rospy.logerr("Goal Point not chosen")
+        cv2.waitKey(0)
+    cv2.destroyAllWindows()
+
+    goal_point =  gmap.get_coordinates_from_index(goal_point_map[1],goal_point_map[0])
+    rospy.loginfo(f"Goal point:{goal_point}")
+    # find path
+    global_planner.set_goal_pt(goal_point)
+    path = global_planner.get_path()
+    if path is None:    return
+    if len(path) > 0:
+        original_map = cv2.imread(param_list[1][0],cv2.IMREAD_GRAYSCALE)
+        #Storing the position as a pose array to be used by other nodes
+        path_msg = PoseArray()
+        path_pts = []
+        for pt in path:
+            global_path_pts = Pose()
+            global_path_pts.position.x = pt[0]
+            global_path_pts.position.y = pt[1]
+            path_pts.append(global_path_pts)
+            pt_grid = gmap.get_index_from_coordinates(pt[0],pt[1])
+            # plot resulting path in pixels over the map
+            original_map = cv2.circle(original_map,(pt_grid[1],pt_grid[0]),radius = 1,color = (0,255,0),thickness = -1)
+        path_msg.poses = path_pts
+        global_path_pub.publish(path_msg)
+
+        #A plot to show the path on the map
+        cv2.imshow('A star',original_map)
+        cv2.waitKey(0)
+        cv2.destroyAllWindows()
+    else:
+        rospy.logerr('Goal is not reachable')
+
+if __name__ == '__main__':
+    try:
+        main()
+    except rospy.ROSInterruptException:
+        pass  

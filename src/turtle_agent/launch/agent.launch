@@ -1,0 +1,13 @@
+<launch>
+    <arg name="streaming" default="false" />
+    <!-- Changed node name to match the one in turtle_agent.py -->
+    <node name="rosa_robot_agent_docker"
+          pkg="turtle_agent"
+          type="turtle_agent.py"
+          respawn="false"
+          respawn_delay="10"
+          cwd="node"
+          output="screen" >
+        <param name="streaming" value="$(arg streaming)" />
+    </node>
+</launch>

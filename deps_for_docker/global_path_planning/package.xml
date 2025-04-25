@@ -1,0 +1,20 @@
+<?xml version="1.0"?>
+<package format="2">
+  <name>global_path_planning</name>
+  <version>0.0.0</version>
+  <description>Minimal global_path_planning for service definition.</description>
+  <maintainer email="test@example.com">Test User</maintainer>
+  <license>TODO</license>
+
+  <buildtool_depend>catkin</buildtool_depend>
+
+  <build_depend>message_generation</build_depend>
+  <exec_depend>message_runtime</exec_depend>
+
+  <depend>std_msgs</depend>
+  <depend>geometry_msgs</depend>
+
+  <export>
+     <metapackage/> <!-- Mark as metapackage if no code -->
+  </export>
+</package>

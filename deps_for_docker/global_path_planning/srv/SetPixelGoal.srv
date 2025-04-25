@@ -1,0 +1,7 @@
+# Request part: Pixel coordinates from the map image
+int32 pixel_x
+int32 pixel_y
+---
+# Response part: Boolean indicating if the goal was reached
+bool reached_goal
+string message # Optional: Add a message for more detail
